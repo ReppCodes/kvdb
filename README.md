@@ -35,6 +35,7 @@ Rules:
 
 # Data format
 ```
-[liveness: 1 byte][key length: 2*int][key][value length: 6*int][value]
+[liveness: 1 byte][key length][key][value length][value][initial timestamp][most
+recent timestamp]
 ```
 
