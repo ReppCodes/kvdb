@@ -1,14 +1,14 @@
+#include <fcntl.h>
+#include <semaphore.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <semaphore.h>
-#include <fcntl.h>
 #include <strings.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "kvdb.h"
 
-// caller must free resulting buffer
 // TODO -- swap this out for an approach that'll give extra 3 decimal points.
 char* get_curr_ts()
 {
@@ -23,73 +23,111 @@ char* get_curr_ts()
     return buffer;
 }
 
-static char* get_db_ts(char* key, char* dbpath)
-{
-    char* buffer = (char*)malloc(TIMESTAMP_LENGTH);
-    record rec;
-    scan_db_record(key, dbpath, &rec);
-    memcpy(buffer, &rec.init_ts, 26);
-    return buffer;
-}
-
-void init_db_record(record *rec)
+void init_db_record(record* rec)
 {
     // null initialize all fields of record
-    rec->is_alive = false;
+    strcpy(rec->is_alive, ISDEAD);
     strcpy(rec->init_ts, NULL_TIMESTAMP);
     strcpy(rec->curr_ts, NULL_TIMESTAMP);
-    rec->key_length = 0;
     memset(rec->key, 0, KEY_MAX_LENGTH);
-    rec->value_length = 0;
     memset(rec->value, 0, VALUE_MAX_LENGTH);
 }
 
-void scan_db_record(char* key, char* dbpath, record* rec)
+int scan_db_record(char* key, char* dbpath, record* rec)
 {
     int err;
     FILE* db;
+    int offset = 0;
 
     // null initialize db record before looking for actual data
     // we rely on safe null values for access and for error handling
     init_db_record(rec);
 
-
     db = fopen(dbpath, "r");
     if (db == NULL) {
-        printf("Error writing key %s to database\n", key);
+        printf("Error opening database\n");
         err = ERR_FILESYS;
         goto cleanup;
     }
 
-    while (true) {
-        
-    }
+    while (1) {
+        size_t scanval = fread(rec, sizeof(record), 1, db);
+        if (scanval == 0) {
+            break;
+        }
 
+        if (strcmp(rec->is_alive, ISALIVE) != 0 || strcmp(key, rec->key) != 0) {
+            init_db_record(rec);
+            offset += sizeof(record);
+            continue;
+        }
+
+        // found a live match for our key. leave it populating the struct, and
+        // return the offset we found it at.
+        break;
+    }
 cleanup:
-    fclose(db);
+    if (db != NULL) {
+        fclose(db);
+    }
+    return offset;
 }
 
-void lock_db();
-void unlock_db();
-int get_key(char* key, char* dbpath);
-int del_key(char* key, char* dbpath);
-int ts_key(char* key, char* dbpath);
-
-// as a simplifying workaround, timestamps are default to all 0s, and we
-// just check the leading 0 for validity.
-bool is_valid_ts(char* timestamp)
+int get_key(char* key, char* dbpath)
 {
-    if (timestamp[0] == '0') {
-        return false;
+    int err = ERR_NOERR;
+    FILE* db;
+    record* rec = (record*)malloc(sizeof(record));
+    scan_db_record(key, dbpath, rec);
+    if (strcmp(rec->is_alive, ISALIVE) == 0) {
+        printf("%s\n", rec->value);
     } else {
-        return true;
+        printf("Key not found in database\n");
     }
+    free(rec);
+    return err;
+}
+
+int del_key(char* key, char* dbpath)
+{
+    record* rec = (record*)malloc(sizeof(record));
+    int err = ERR_NOERR;
+    char* deadval = ISDEAD;
+    int offset = scan_db_record(key, dbpath, rec);
+
+    if (strcmp(rec->is_alive, ISALIVE) == 0) {
+        FILE* db = fopen(dbpath, "r+");
+        fseek(db, offset, SEEK_SET);
+        fwrite(deadval, 5, 1, db);
+    } else {
+        printf("Key not found in databse\n");
+        err = ERR_KEYNOTFOUND;
+    }
+    free(rec);
+    return err;
+}
+
+int ts_key(char* key, char* dbpath)
+{
+    int err = ERR_NOERR;
+    FILE* db;
+    record* rec = (record*)malloc(sizeof(record));
+    scan_db_record(key, dbpath, rec);
+    if (strcmp(rec->is_alive, ISALIVE) == 0) {
+        printf("First timestamp: %s\n", rec->init_ts);
+        printf("Last timestamp: %s\n", rec->curr_ts);
+    } else {
+        printf("Key not found in database\n");
+        err = ERR_KEYNOTFOUND;
+    }
+    free(rec);
+    return err;
 }
 
 int set_key(char* key, char* value, char* dbpath)
 {
     int err = ERR_NOERR;
-    bool del_old_record;
+    int del_old_record;
 
     // bounds checks
     if (strlen(key) > KEY_MAX_LENGTH || strlen(key) == 0) {
@@ -99,31 +137,33 @@ int set_key(char* key, char* value, char* dbpath)
         printf("Value kength must be between 1 and 1000, inclusive\n");
         return ERR_BADVALUE;
     }
-  
-    
-    char* init_ts = get_db_ts(key, dbpath);
+
+    // check for old record, both to delete and for init_ts
+    char* init_ts;
     char* curr_ts = get_curr_ts();
-    if (is_valid_ts(init_ts)) {
-        del_old_record = true;
+    record* old_record = (record*)malloc(sizeof(record));
+    scan_db_record(key, dbpath, old_record);
+    if (strcmp(old_record->is_alive, ISALIVE) == 0) {
+        del_old_record = 1;
+        init_ts = old_record->init_ts;
     } else {
-        free(init_ts);
         init_ts = curr_ts;
-        del_old_record = false;
+        del_old_record = 0;
     }
 
+    // populate current record and write to end of file
     record* rec = (record*)malloc(sizeof(record));
     init_db_record(rec);
-    rec->is_alive = true;
+    strcpy(rec->is_alive, ISALIVE);
     strcpy(rec->init_ts, init_ts);
     strcpy(rec->curr_ts, curr_ts);
-    rec->key_length = strlen(key);
     strcpy(rec->key, key);
-    rec->value_length = strlen(value);
     strcpy(rec->value, value);
 
     FILE* db = fopen(dbpath, "a");
     if (db != NULL) {
-        if (fwrite(rec, sizeof(record), 1, db)) {
+        size_t bytes = fwrite(rec, sizeof(record), 1, db);
+        if (bytes < 0) {
             printf("Error writing key %s to database\n", key);
             err = ERR_FILESYS;
             goto cleanup;
@@ -142,24 +182,27 @@ int set_key(char* key, char* value, char* dbpath)
     // do this at the end, data loss is worse than duplicate keys because later
     // key is always the valid one so we can always recover.
     if (del_old_record) {
-      del_key(key, dbpath);
+        del_key(key, dbpath);
     }
 
 cleanup:
-    free(curr_ts);
-    curr_ts = NULL;
-    if (init_ts) {
-        free(init_ts);
+    if (curr_ts != NULL) {
+        free(curr_ts);
+        curr_ts = NULL;
     }
-    free(rec);
+    if (old_record != NULL) {
+        free(old_record);
+    }
+
+    if (rec != NULL) {
+        free(rec);
+    }
     return err;
 }
 
 int main(int argc, char* argv[])
 {
     int err;
-    // for POC, just use single db-wide lock to be safe for multiprocessing
-    sem_t* db_sem; 
 
     if (argc < 3) {
         printf("Requires at least 3 arguments, only %d provided\n", argc);
@@ -177,20 +220,28 @@ int main(int argc, char* argv[])
     }
 
     // keep this separate and passed in for better modularity in future work
-    char* dbpath = "kv.db";
+    char cwd[512];
+    getcwd(cwd, sizeof(cwd));
+    char dbname[7] = "/kv.db\0";
+    char dbpath[519];
+    strcpy(dbpath, cwd);
+    strcat(dbpath, dbname);
 
-    db_sem = sem_open(dbpath, O_CREAT, SEM_PERMS, 1);
+    // create the file if it doesn't exist, simplifies downstream fopen calls.
+    FILE* db = fopen(dbpath, "a");
+    fclose(db);
+
+    // for POC, just use single db-wide lock to be safe for multiprocessing
+    sem_t* db_sem;
+    db_sem = sem_open("kvdb_sem", O_CREAT, SEM_PERMS, 1);
     if (db_sem == SEM_FAILED) {
         printf("Unable to acquire lock on database\n");
         return ERR_SEMAPHORE;
     }
-
-    // TODO -- add timeout loop here
     if (sem_wait(db_sem) < 0) {
         printf("Unable to acquire lock on database\n");
         return ERR_SEMAPHORE;
     }
-
 
     // invoke correct handler function
     if (strcasecmp(cmd, "get") == 0) {
@@ -206,7 +257,14 @@ int main(int argc, char* argv[])
         err = ERR_BADCMD;
     }
 
+    // close down and clean up semaphore
     if (sem_post(db_sem) < 0) {
+        printf("Error releasing lock on database\n");
+        err = ERR_SEMAPHORE;
+    } else if (sem_close(db_sem) < 0) {
+        printf("Error releasing lock on database\n");
+        err = ERR_SEMAPHORE;
+    } else if (sem_unlink("kvdb_sem") < 0) {
         printf("Error releasing lock on database\n");
         err = ERR_SEMAPHORE;
     }

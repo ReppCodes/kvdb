@@ -1,5 +1,5 @@
 CC=gcc
-LIBS=
+LIBS=-lpthread
 CFLAGS=-g
 SOURCE=src/kvdb.c
 SRC_DIR = ./src

@@ -29,13 +29,17 @@ Rules:
 * Use a liveness field for delete, just mark it to 0 for "delete" op.
     * Garbage collection op could be "future work", would be easy enough as its own op.
 * Use a semaphore for locking the db during operations
-    * Key to filepath of db if we want to be fancy. start with just hardcoding single one for now.
 * Write data to/from file in current directory
 * keys and values all treated as ASCII text
 
 # Data format
 ```
-[liveness: 1 byte][key length][key][value length][value][initial timestamp][most
-recent timestamp]
+[isalive][key length][key][value length][value][initial timestamp][most recent timestamp]
 ```
 
+# Limitations
+* Places database file into current working directory
+* File is append-only, future "gc" command would be for compaction
+* Max key length = 25
+* Max value length = 1000
+* Both key and value treated as text
