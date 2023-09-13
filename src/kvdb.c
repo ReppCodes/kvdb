@@ -22,7 +22,7 @@ char* get_curr_ts()
     timestamp_struct = localtime(&timestamp_sec);
 
     int offset = strftime(buffer, TIMESTAMP_LENGTH, "%Y-%m-%d %H:%M:%S", timestamp_struct);
-    char* microsec_str;
+    char microsec_str[256];
     sprintf(microsec_str, "%ld", timestamp.tv_usec);
     strcat(buffer, ".");
     strncat(buffer, microsec_str, 3);
@@ -40,9 +40,89 @@ void init_db_record(record* rec)
     memset(rec->value, 0, VALUE_MAX_LENGTH);
 }
 
+int compact_db(char* dbpath)
+{
+    int err = ERR_NOERR;
+    FILE* db;
+    FILE* newdb;
+
+    record* rec = (record*)malloc(sizeof(record));
+    init_db_record(rec);
+
+    char cwd[512];
+    getcwd(cwd, sizeof(cwd));
+    char dbname[11] = "/kv.db.bak\0";
+    char newdbpath[525];
+    strcpy(newdbpath, cwd);
+    strcat(newdbpath, dbname);
+
+    db = fopen(dbpath, "r");
+    if (db == NULL) {
+        printf("Error opening database\n");
+        err = ERR_FILESYS;
+        goto cleanup;
+    }
+
+    newdb = fopen(newdbpath, "a");
+    if (newdb == NULL) {
+        printf("Error opening new database for gc\n");
+        err = ERR_FILESYS;
+        goto cleanup;
+    }
+
+    // move over only live records
+    while (1) {
+        size_t scanval = fread(rec, sizeof(record), 1, db);
+        if (scanval == 0) {
+            break;
+        }
+
+        if (strcmp(rec->is_alive, ISALIVE) != 0) {
+            init_db_record(rec);
+            continue;
+        }
+
+        size_t bytes = fwrite(rec, sizeof(record), 1, newdb);
+        if (bytes < 0) {
+            printf("Error writing key %s to database\n", rec->key);
+            err = ERR_FILESYS;
+            goto cleanup;
+        }
+    }
+
+    fclose(db);
+    db = NULL;
+
+    fclose(newdb);
+    newdb = NULL;
+
+    if (remove(dbpath) != 0) {
+        printf("Error removing old database file\n");
+        err = ERR_FILESYS;
+        goto cleanup;
+    }
+
+    if (rename(newdbpath, dbpath) != 0) {
+        printf("Error moving new database file into place\n");
+        err = ERR_FILESYS;
+        goto cleanup;
+    }
+
+cleanup:
+    if (db != NULL) {
+        fclose(db);
+    }
+    if (newdb != NULL) {
+        fclose(newdb);
+    }
+    if (rec != NULL) {
+        free(rec);
+    }
+    return err;
+}
+
 int scan_db_record(char* key, char* dbpath, record* rec)
 {
-    int err;
     FILE* db;
     int offset = 0;
 
@@ -53,7 +133,6 @@ int scan_db_record(char* key, char* dbpath, record* rec)
     db = fopen(dbpath, "r");
     if (db == NULL) {
         printf("Error opening database\n");
-        err = ERR_FILESYS;
         goto cleanup;
     }
 
@@ -259,6 +338,8 @@ int main(int argc, char* argv[])
         err = del_key(key, dbpath);
     } else if (strcasecmp(cmd, "ts") == 0) {
         err = ts_key(key, dbpath);
+    } else if (strcasecmp(cmd, "gc") == 0) {
+        err = compact_db(dbpath);
     } else {
         printf("Unknown command. Accepted commands are: get, set, del, ts.\n");
         err = ERR_BADCMD;

@@ -14,6 +14,9 @@ sleep 3
 kvdb set keyone wherehashallmyvaluegone
 kvdb get keyone
 kvdb ts keyone
+stat kv.db
+kvdb gc all
+stat kv.db
 
 # parallel tests
 kvdb set keytwo valuevaluevalue&

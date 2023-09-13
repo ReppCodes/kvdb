@@ -3,8 +3,8 @@
   but given a 4 hour budget I chose to prioritize in this way.
 * The program places the database file into the current working directory. It would be pretty
   straightforward to modify it to accept a filepath as an argument but that is left for future work. 
-* The file is append-only, with "delete" just marking a record dead. A future "gc" command would be
-  implemented for compaction.
+* By default the database file is append-only, with "delete" just marking a record dead. The
+  command `kvdb gc all` can be used to compact the file.
 * The record format is fixed-width, so smaller records still take up full space. This was done to
   simplify the code for scanning through records.
 * The maximum key length is 25 characters.

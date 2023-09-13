@@ -17,12 +17,13 @@ typedef struct record {
 } record;
 
 extern char* get_curr_ts();
+extern int compact_db(char* dbpath);
 extern int del_key(char* key, char* dbpath);
 extern int get_key(char* key, char* dbpath);
+extern int scan_db_record(char* key, char* dbpath, record* rec);
 extern int set_key(char* key, char* value, char* dbpath);
 extern int ts_key(char* key, char* dbpath);
 extern void init_db_record(record* rec);
-extern int scan_db_record(char* key, char* dbpath, record* rec);
 
 // error values
 enum {
