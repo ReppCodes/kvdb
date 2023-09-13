@@ -10,7 +10,6 @@
 
 #include "kvdb.h"
 
-// TODO -- swap this out for an approach that'll give extra 3 decimal points.
 char* get_curr_ts()
 {
     struct timeval timestamp;
@@ -267,14 +266,15 @@ int main(int argc, char* argv[])
 
     // close down and clean up semaphore
     if (sem_post(db_sem) < 0) {
-        printf("Error releasing lock on database\n");
+        printf("Error posting to semaphore\n");
         err = ERR_SEMAPHORE;
     } else if (sem_close(db_sem) < 0) {
-        printf("Error releasing lock on database\n");
+        printf("Error closing semaphore\n");
         err = ERR_SEMAPHORE;
-    } else if (sem_unlink("kvdb_sem") < 0) {
-        printf("Error releasing lock on database\n");
-        err = ERR_SEMAPHORE;
-    }
+    } 
+
+    // all processes will call unlink, but only needs to be called once. doesn't hurt to call
+    // repeatedly.
+    sem_unlink("kvdb_sem");
     return err;
 }
