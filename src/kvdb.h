@@ -1,9 +1,9 @@
 #include <sys/stat.h>
 
 #define KEY_MAX_LENGTH 25
-#define TIMESTAMP_LENGTH 26
+#define TIMESTAMP_LENGTH 24
 #define VALUE_MAX_LENGTH 1000
-#define NULL_TIMESTAMP "000-00-00 00:00:00"
+#define NULL_TIMESTAMP "000-00-00 00:00:00.000"
 #define SEM_PERMS (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP)
 #define ISALIVE "ALIV"
 #define ISDEAD "DEAD"

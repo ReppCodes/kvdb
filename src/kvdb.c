@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -12,14 +13,21 @@
 // TODO -- swap this out for an approach that'll give extra 3 decimal points.
 char* get_curr_ts()
 {
+    struct timeval timestamp;
+    time_t timestamp_sec;
+    struct tm* timestamp_struct;
     char* buffer = (char*)malloc(TIMESTAMP_LENGTH);
-    time_t timer;
-    struct tm* tm_info;
 
-    timer = time(NULL);
-    tm_info = localtime(&timer);
+    gettimeofday(&timestamp, NULL);
+    timestamp_sec = timestamp.tv_sec;
+    timestamp_struct = localtime(&timestamp_sec);
 
-    strftime(buffer, TIMESTAMP_LENGTH, "%Y-%m-%d %H:%M:%S", tm_info);
+    int offset = strftime(buffer, TIMESTAMP_LENGTH, "%Y-%m-%d %H:%M:%S", timestamp_struct);
+    char* microsec_str;
+    sprintf(microsec_str, "%ld", timestamp.tv_usec);
+    strcat(buffer, ".");
+    strncat(buffer, microsec_str, 3);
+
     return buffer;
 }
 
